@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Image, Pencil, Trash2, Play, Move, Copy, X } from "lucide-react";
+import { FileText, Image, Pencil, Trash2, Play, Move, Copy, X, LayoutTemplate, Instagram, Facebook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import CalendarNavigation from "./CalendarNavigation";
 import CalendarViewToggle, { type CalendarViewMode } from "./CalendarViewToggle";
@@ -11,16 +11,22 @@ import CalendarMonthView from "./CalendarMonthView";
 import CalendarWeekView from "./CalendarWeekView";
 import CalendarDayView from "./CalendarDayView";
 import AccountFilter from "@/components/social/AccountFilter";
+import SavedViewTabs from "./SavedViewTabs";
+import SavedViewDialog from "./SavedViewDialog";
 import PublishStatusBadge from "@/components/social/PublishStatusBadge";
 import PostDetailDialog from "@/components/composer/PostDetailDialog";
 import StoryDetailDialog from "@/components/composer/StoryDetailDialog";
 import Dialog from "@/components/ui/dialog";
 import PostComposer from "@/components/composer/PostComposer";
 import StoryComposer from "@/components/composer/StoryComposer";
+import TemplateStoryCard from "./TemplateStoryCard";
+import ConfirmDialog from "@/components/ui/confirm-dialog";
 
 interface CalendarItem {
   id: string;
   type: "post" | "story";
+  contentType: string | null;
+  mediaType: string | null;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -28,6 +34,7 @@ interface CalendarItem {
   thumbnailUrl: string | null;
   platforms: string[];
   accountNames: string[];
+  platformAccounts: { platform: string; accountName: string; accountAvatar: string | null }[];
 }
 
 interface DraftItem {
@@ -38,7 +45,7 @@ interface DraftItem {
   createdAt: string;
   media: { localUrl: string; type: string }[];
   accounts: {
-    socialAccount: { id: string; platform: string; accountName: string };
+    socialAccount: { id: string; platform: string; accountName: string; accountAvatar: string | null };
   }[];
 }
 
@@ -48,8 +55,16 @@ interface DraftStoryItem {
   createdAt: string;
   media: { localUrl: string; type: string }[];
   accounts: {
-    socialAccount: { id: string; platform: string; accountName: string };
+    socialAccount: { id: string; platform: string; accountName: string; accountAvatar: string | null };
   }[];
+}
+
+interface StoryTemplate {
+  id: string;
+  name: string | null;
+  scheduledTime: string | null;
+  socialAccountIds: string[];
+  media: { localUrl: string; type: string }[];
 }
 
 export default function CalendarView() {
@@ -58,7 +73,15 @@ export default function CalendarView() {
   const [items, setItems] = useState<CalendarItem[]>([]);
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [storyDrafts, setStoryDrafts] = useState<DraftStoryItem[]>([]);
-  const [accountFilter, setAccountFilter] = useState<string | null>(null);
+  const [accountFilters, setAccountFilters] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<StoryTemplate[]>([]);
+  const [socialAccounts, setSocialAccounts] = useState<{ id: string; platform: string }[]>([]);
+
+  // Saved views state
+  const [savedViews, setSavedViews] = useState<{ id: string; name: string; socialAccountIds: string[]; position: number }[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editingView, setEditingView] = useState<{ id: string; name: string; socialAccountIds: string[]; position: number } | null>(null);
 
   // Post detail dialog state
   const [detailPostId, setDetailPostId] = useState<string | null>(null);
@@ -78,6 +101,17 @@ export default function CalendarView() {
 
   // Pre-filled scheduled date from cell click
   const [initialScheduledAt, setInitialScheduledAt] = useState<string | null>(null);
+
+  // Template data for pre-filling story composer
+  const [templateData, setTemplateData] = useState<{ mediaUrl: string; socialAccountIds: string[]; scheduledTime?: string | null } | null>(null);
+
+  // Generic confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    description: string;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Cell click menu state
   const [cellMenu, setCellMenu] = useState<{ x: number; y: number; date: Date } | null>(null);
@@ -131,7 +165,7 @@ export default function CalendarView() {
       from: from.toISOString(),
       to: to.toISOString(),
     });
-    if (accountFilter) params.set("socialAccountId", accountFilter);
+    accountFilters.forEach((id) => params.append("socialAccountId", id));
 
     try {
       const res = await apiFetch(`/api/calendar?${params}`);
@@ -142,7 +176,7 @@ export default function CalendarView() {
     } catch {
       toast.error("Erreur lors du chargement du calendrier");
     }
-  }, [getDateRange, accountFilter]);
+  }, [getDateRange, accountFilters]);
 
   const fetchDrafts = useCallback(async () => {
     try {
@@ -164,8 +198,19 @@ export default function CalendarView() {
     } catch {}
   }, []);
 
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/story-templates");
+      if (res.ok) {
+        const data = await res.json();
+        setTemplates(data || []);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
-    fetchItems();
+    const timeout = setTimeout(fetchItems, 150);
+    return () => clearTimeout(timeout);
   }, [fetchItems]);
 
   useEffect(() => {
@@ -175,6 +220,65 @@ export default function CalendarView() {
   useEffect(() => {
     fetchStoryDrafts();
   }, [fetchStoryDrafts]);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
+  useEffect(() => {
+    apiFetch("/api/social-auth/accounts")
+      .then((r) => r.json())
+      .then((data) => setSocialAccounts(data.map((a: any) => ({ id: a.id, platform: a.platform }))));
+  }, []);
+
+  const fetchSavedViews = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/calendar-views");
+      if (res.ok) {
+        const data = await res.json();
+        setSavedViews(data || []);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchSavedViews();
+  }, [fetchSavedViews]);
+
+  const handleSelectView = (view: { id: string; name: string; socialAccountIds: string[]; position: number } | null) => {
+    if (view) {
+      setActiveViewId(view.id);
+      setAccountFilters(view.socialAccountIds);
+    } else {
+      setActiveViewId(null);
+      setAccountFilters([]);
+    }
+  };
+
+  const handleAccountFilterChange = (ids: string[]) => {
+    setAccountFilters(ids);
+    setActiveViewId(null);
+  };
+
+  const handleDeleteView = (viewId: string) => {
+    setConfirmDialog({
+      title: "Supprimer cette vue ?",
+      description: "Cette action est irréversible. La vue sera définitivement supprimée.",
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/calendar-views/${viewId}`, { method: "DELETE" });
+        if (res.ok) {
+          toast.success("Vue supprimée");
+          if (activeViewId === viewId) {
+            setActiveViewId(null);
+            setAccountFilters([]);
+          }
+          fetchSavedViews();
+        } else {
+          toast.error("Erreur réseau");
+        }
+      },
+    });
+  };
 
   const navigate = (direction: -1 | 0 | 1) => {
     if (direction === 0) {
@@ -188,6 +292,18 @@ export default function CalendarView() {
     else d.setDate(d.getDate() + direction);
     setCurrentDate(d);
   };
+
+  // Keyboard navigation: left/right arrows
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if ((e.target as HTMLElement)?.closest?.("[role='dialog']")) return;
+      if (e.key === "ArrowLeft") { e.preventDefault(); navigate(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); navigate(1); }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentDate, viewMode]);
 
   const getLabel = () => {
     if (viewMode === "month") {
@@ -220,6 +336,45 @@ export default function CalendarView() {
   }, []);
 
   const handleReschedule = async (type: string, id: string, date: Date) => {
+    // Template drop → create story directly from template
+    if (type === "template") {
+      const tpl = templates.find((t) => t.id === id);
+      if (!tpl) return;
+      const mediaUrl = tpl.media?.[0]?.localUrl;
+      if (!mediaUrl) return;
+      // Apply saved time from template if available
+      const targetDate = new Date(date);
+      if (tpl.scheduledTime) {
+        const [h, m] = tpl.scheduledTime.split(":").map(Number);
+        targetDate.setHours(h, m, 0, 0);
+      }
+      if (targetDate < new Date()) {
+        toast.error("Impossible de programmer dans le passé");
+        return;
+      }
+      try {
+        const res = await apiFetch("/api/stories", {
+          method: "POST",
+          body: JSON.stringify({
+            mediaUrl,
+            socialAccountIds: tpl.socialAccountIds,
+            scheduledAt: targetDate.toISOString(),
+          }),
+        });
+        if (res.ok) {
+          toast.success("Story créée depuis le modèle");
+          fetchItems();
+          fetchStoryDrafts();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          toast.error(err.message || "Erreur lors de la création");
+        }
+      } catch {
+        toast.error("Erreur réseau");
+      }
+      return;
+    }
+
     // Find original item to get its time
     const item = items.find((i) => i.type === type && i.id === id);
     const originalDate = item
@@ -269,6 +424,7 @@ export default function CalendarView() {
         fetchItems();
         fetchDrafts();
         fetchStoryDrafts();
+        fetchTemplates();
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err.message || "Erreur lors de la reprogrammation");
@@ -297,6 +453,7 @@ export default function CalendarView() {
         fetchItems();
         fetchDrafts();
         fetchStoryDrafts();
+        fetchTemplates();
       } else {
         const err = await res.json().catch(() => ({}));
         toast.error(err.message || "Erreur lors de la duplication");
@@ -368,53 +525,75 @@ export default function CalendarView() {
     setInitialScheduledAt(null);
     fetchItems();
     fetchDrafts();
+    fetchTemplates();
   };
 
   const handleStoryComposerSaved = () => {
     setStoryComposerOpen(false);
     setStoryComposerEditId(null);
     setInitialScheduledAt(null);
+    setTemplateData(null);
     fetchItems();
     fetchStoryDrafts();
+    fetchTemplates();
   };
 
-  const handleDeleteDraft = async (id: string) => {
-    if (!confirm("Supprimer ce brouillon ?")) return;
-    const res = await apiFetch(`/api/posts/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      toast.success("Brouillon supprimé");
-      fetchDrafts();
-    }
+  const handleDeleteDraft = (id: string) => {
+    setConfirmDialog({
+      title: "Supprimer ce brouillon ?",
+      description: "Cette action est irréversible. Le brouillon sera définitivement supprimé.",
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/posts/${id}`, { method: "DELETE" });
+        if (res.ok) {
+          toast.success("Brouillon supprimé");
+          fetchDrafts();
+          fetchTemplates();
+        }
+      },
+    });
   };
 
   const handlePublishDraft = async (id: string) => {
-    if (!confirm("Publier maintenant ?")) return;
     const res = await apiFetch(`/api/posts/${id}/publish-now`, { method: "POST" });
     if (res.ok) {
       toast.success("Publication en cours...");
       fetchDrafts();
       fetchItems();
+      fetchTemplates();
     }
   };
 
-  const handleDeleteStoryDraft = async (id: string) => {
-    if (!confirm("Supprimer cette story brouillon ?")) return;
-    const res = await apiFetch(`/api/stories/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      toast.success("Story supprimée");
-      fetchStoryDrafts();
-    }
+  const handleDeleteStoryDraft = (id: string) => {
+    setConfirmDialog({
+      title: "Supprimer cette story brouillon ?",
+      description: "Cette action est irréversible. La story sera définitivement supprimée.",
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/stories/${id}`, { method: "DELETE" });
+        if (res.ok) {
+          toast.success("Story supprimée");
+          fetchStoryDrafts();
+          fetchTemplates();
+        }
+      },
+    });
   };
 
   const handlePublishStoryDraft = async (id: string) => {
-    if (!confirm("Publier maintenant ?")) return;
     const res = await apiFetch(`/api/stories/${id}/publish-now`, { method: "POST" });
     if (res.ok) {
       toast.success("Publication en cours...");
       fetchStoryDrafts();
       fetchItems();
+      fetchTemplates();
     }
   };
+
+  const filteredTemplates = useMemo(() => {
+    if (accountFilters.length === 0) return templates;
+    return templates.filter((t) =>
+      t.socialAccountIds.some((id) => accountFilters.includes(id))
+    );
+  }, [templates, accountFilters]);
 
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString("fr-FR", {
@@ -435,11 +614,24 @@ export default function CalendarView() {
           onToday={() => navigate(0)}
         />
         <div className="flex items-center gap-2">
-          <AccountFilter value={accountFilter} onChange={setAccountFilter} />
+          <AccountFilter value={accountFilters} onChange={handleAccountFilterChange} />
           <CalendarViewToggle value={viewMode} onChange={setViewMode} />
         </div>
       </div>
 
+      {/* Saved View Tabs */}
+      <SavedViewTabs
+        views={savedViews}
+        activeViewId={activeViewId}
+        onSelectView={handleSelectView}
+        onCreateView={() => { setEditingView(null); setViewDialogOpen(true); }}
+        onEditView={(view) => { setEditingView(view); setViewDialogOpen(true); }}
+        onDeleteView={handleDeleteView}
+      />
+
+      {/* Calendar + Favorites row */}
+      <div className="flex gap-4">
+      <div className="flex-1 min-w-0 space-y-6">
       {/* Calendar View */}
       <div className="border border-[#e8e5e0] rounded-lg overflow-hidden">
         {viewMode === "month" && (
@@ -469,6 +661,50 @@ export default function CalendarView() {
             onCellClick={handleCellClick}
           />
         )}
+      </div>
+      </div>
+
+      {/* Templates sidebar */}
+      {filteredTemplates.length > 0 && (
+        <div className="w-52 flex-shrink-0 space-y-3">
+          <div className="flex items-center gap-1.5">
+            <LayoutTemplate className="h-3.5 w-3.5 text-[#9b9a97]" />
+            <h3 className="text-xs font-semibold text-[#37352f] uppercase tracking-wider">
+              Modèles ({filteredTemplates.length})
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {filteredTemplates.map((template) => (
+              <TemplateStoryCard
+                key={template.id}
+                template={template}
+                socialAccounts={socialAccounts}
+                onClick={(t) => {
+                  const mediaUrl = t.media?.[0]?.localUrl;
+                  if (mediaUrl) {
+                    setTemplateData({ mediaUrl, socialAccountIds: t.socialAccountIds, scheduledTime: t.scheduledTime });
+                    setStoryComposerEditId(null);
+                    setStoryComposerOpen(true);
+                  }
+                }}
+                onDelete={(id) => setConfirmDialog({
+                  title: "Supprimer ce modèle ?",
+                  description: "Cette action est irréversible. Le modèle sera définitivement supprimé.",
+                  onConfirm: async () => {
+                    const res = await apiFetch(`/api/story-templates/${id}`, { method: "DELETE" });
+                    if (res.ok) {
+                      toast.success("Modèle supprimé");
+                      fetchTemplates();
+                    } else {
+                      toast.error("Erreur lors de la suppression");
+                    }
+                  },
+                })}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Post Drafts section */}
@@ -503,8 +739,16 @@ export default function CalendarView() {
                   <div className="flex items-center gap-2 mt-0.5">
                     <PublishStatusBadge status={draft.status} />
                     {draft.accounts.map((a) => (
-                      <span key={a.socialAccount.id} className="text-[10px] text-[#9b9a97]">
-                        {a.socialAccount.platform === "INSTAGRAM" ? "📷" : "📘"}{" "}
+                      <span key={a.socialAccount.id} className="flex items-center gap-1 text-[10px] text-[#9b9a97]">
+                        <span className="w-4 h-4 rounded-full bg-[#f7f6f3] flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {a.socialAccount.accountAvatar ? (
+                            <img src={a.socialAccount.accountAvatar} className="w-full h-full object-cover" alt="" />
+                          ) : a.socialAccount.platform === "INSTAGRAM" ? (
+                            <Instagram className="h-2.5 w-2.5 text-pink-500" />
+                          ) : (
+                            <Facebook className="h-2.5 w-2.5 text-blue-600 fill-blue-600" />
+                          )}
+                        </span>
                         {a.socialAccount.accountName}
                       </span>
                     ))}
@@ -585,8 +829,16 @@ export default function CalendarView() {
                   <div className="flex items-center gap-2 mt-0.5">
                     <PublishStatusBadge status={draft.status} />
                     {draft.accounts.map((a) => (
-                      <span key={a.socialAccount.id} className="text-[10px] text-[#9b9a97]">
-                        {a.socialAccount.platform === "INSTAGRAM" ? "📷" : "📘"}{" "}
+                      <span key={a.socialAccount.id} className="flex items-center gap-1 text-[10px] text-[#9b9a97]">
+                        <span className="w-4 h-4 rounded-full bg-[#f7f6f3] flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {a.socialAccount.accountAvatar ? (
+                            <img src={a.socialAccount.accountAvatar} className="w-full h-full object-cover" alt="" />
+                          ) : a.socialAccount.platform === "INSTAGRAM" ? (
+                            <Instagram className="h-2.5 w-2.5 text-pink-500" />
+                          ) : (
+                            <Facebook className="h-2.5 w-2.5 text-blue-600 fill-blue-600" />
+                          )}
+                        </span>
                         {a.socialAccount.accountName}
                       </span>
                     ))}
@@ -735,7 +987,7 @@ export default function CalendarView() {
         onClose={() => { setDetailOpen(false); setDetailPostId(null); }}
         onEdit={handleEditFromDetail}
         onDuplicate={handleDuplicateFromDetail}
-        onDeleted={() => { fetchItems(); fetchDrafts(); }}
+        onDeleted={() => { fetchItems(); fetchDrafts(); fetchTemplates(); }}
       />
 
       {/* Story Detail Dialog */}
@@ -744,7 +996,8 @@ export default function CalendarView() {
         open={storyDetailOpen}
         onClose={() => { setStoryDetailOpen(false); setDetailStoryId(null); }}
         onEdit={handleStoryEditFromDetail}
-        onDeleted={() => { fetchItems(); fetchStoryDrafts(); }}
+        onDeleted={() => { fetchItems(); fetchStoryDrafts(); fetchTemplates(); }}
+        onTemplateSaved={fetchTemplates}
       />
 
       {/* Post Composer Dialog */}
@@ -765,17 +1018,44 @@ export default function CalendarView() {
       {/* Story Composer Dialog */}
       <Dialog
         open={storyComposerOpen}
-        onClose={() => { setStoryComposerOpen(false); setStoryComposerEditId(null); setInitialScheduledAt(null); }}
+        onClose={() => { setStoryComposerOpen(false); setStoryComposerEditId(null); setInitialScheduledAt(null); setTemplateData(null); }}
         title={storyComposerEditId ? "Modifier la story" : "Nouvelle story"}
         maxWidth="max-w-4xl"
       >
         <StoryComposer
-          key={storyComposerEditId || initialScheduledAt || "new-story"}
+          key={storyComposerEditId || initialScheduledAt || (templateData ? "template" : "new-story")}
           editId={storyComposerEditId}
           onSaved={handleStoryComposerSaved}
+          onTemplateSaved={fetchTemplates}
           initialScheduledAt={storyComposerEditId ? undefined : initialScheduledAt}
+          templateData={templateData}
         />
       </Dialog>
+      {/* Saved View Dialog */}
+      <SavedViewDialog
+        open={viewDialogOpen}
+        onClose={() => { setViewDialogOpen(false); setEditingView(null); }}
+        editingView={editingView}
+        onSaved={fetchSavedViews}
+      />
+
+      {/* Confirm dialog (deletions) */}
+      <ConfirmDialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={async () => {
+          if (!confirmDialog) return;
+          setConfirmLoading(true);
+          await confirmDialog.onConfirm();
+          setConfirmLoading(false);
+          setConfirmDialog(null);
+        }}
+        title={confirmDialog?.title || ""}
+        description={confirmDialog?.description}
+        confirmLabel="Supprimer"
+        variant="danger"
+        loading={confirmLoading}
+      />
     </div>
   );
 }

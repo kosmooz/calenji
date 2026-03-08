@@ -21,7 +21,7 @@ export class CalendarController {
     @Req() req: any,
     @Query("from") from: string,
     @Query("to") to: string,
-    @Query("socialAccountId") socialAccountId?: string,
+    @Query("socialAccountId") socialAccountId?: string | string[],
   ) {
     return this.calendarService.getItems(
       req.user.sub,

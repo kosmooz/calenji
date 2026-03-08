@@ -1,16 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import CalendarItemChip from "./CalendarItemChip";
 
 interface CalendarItem {
   id: string;
   type: "post" | "story";
+  contentType: string | null;
+  mediaType: string | null;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
   caption: string | null;
   thumbnailUrl: string | null;
   platforms: string[];
+  platformAccounts?: { platform: string; accountName: string; accountAvatar: string | null }[];
 }
 
 interface CalendarMonthViewProps {
@@ -43,6 +47,8 @@ export default function CalendarMonthView({
   for (let i = 0; i < startDayOfWeek; i++) days.push(null);
   for (let d = 1; d <= daysInMonth; d++) days.push(d);
   while (days.length % 7 !== 0) days.push(null);
+
+  const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set());
 
   const today = new Date();
   const isToday = (d: number) =>
@@ -112,7 +118,7 @@ export default function CalendarMonthView({
                 </div>
                 <div className="space-y-0.5">
                   {getItemsForDay(day)
-                    .slice(0, 3)
+                    .slice(0, expandedDays.has(day) ? undefined : 3)
                     .map((item) => (
                       <CalendarItemChip
                         key={`${item.type}-${item.id}`}
@@ -129,10 +135,21 @@ export default function CalendarMonthView({
                         }}
                       />
                     ))}
-                  {getItemsForDay(day).length > 3 && (
-                    <div className="text-[9px] text-[#9b9a97] px-1">
+                  {getItemsForDay(day).length > 3 && !expandedDays.has(day) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExpandedDays((s) => new Set(s).add(day)); }}
+                      className="text-[9px] text-[#9b9a97] px-1 hover:text-[#37352f] transition-colors"
+                    >
                       +{getItemsForDay(day).length - 3} de plus
-                    </div>
+                    </button>
+                  )}
+                  {expandedDays.has(day) && getItemsForDay(day).length > 3 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExpandedDays((s) => { const n = new Set(s); n.delete(day); return n; }); }}
+                      className="text-[9px] text-[#9b9a97] px-1 hover:text-[#37352f] transition-colors"
+                    >
+                      Réduire
+                    </button>
                   )}
                 </div>
               </>

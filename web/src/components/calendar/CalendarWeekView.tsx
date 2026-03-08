@@ -5,12 +5,15 @@ import CalendarItemChip from "./CalendarItemChip";
 interface CalendarItem {
   id: string;
   type: "post" | "story";
+  contentType: string | null;
+  mediaType: string | null;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
   caption: string | null;
   thumbnailUrl: string | null;
   platforms: string[];
+  platformAccounts?: { platform: string; accountName: string; accountAvatar: string | null }[];
 }
 
 interface CalendarWeekViewProps {

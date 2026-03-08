@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { toast } from "sonner";
-import { Save, Send, AlertTriangle } from "lucide-react";
+import { Save, Send, AlertTriangle, LayoutTemplate } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import MediaUploadZone from "./MediaUploadZone";
 import PlatformSelector from "./PlatformSelector";
@@ -22,10 +22,12 @@ interface AccountInfo {
 interface StoryComposerProps {
   editId?: string | null;
   onSaved?: () => void;
+  onTemplateSaved?: () => void;
   initialScheduledAt?: string | null;
+  templateData?: { mediaUrl: string; socialAccountIds: string[]; scheduledTime?: string | null } | null;
 }
 
-export default function StoryComposer({ editId, onSaved, initialScheduledAt }: StoryComposerProps) {
+export default function StoryComposer({ editId, onSaved, onTemplateSaved, initialScheduledAt, templateData }: StoryComposerProps) {
   const router = useRouter();
 
   const [mediaUrl, setMediaUrl] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export default function StoryComposer({ editId, onSaved, initialScheduledAt }: S
   const [saving, setSaving] = useState(false);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => {
     apiFetch("/api/social-auth/accounts")
@@ -45,9 +48,26 @@ export default function StoryComposer({ editId, onSaved, initialScheduledAt }: S
   // Load existing story for editing
   useEffect(() => {
     if (!editId) {
-      setMediaUrl(null);
-      setSocialAccountIds([]);
-      setScheduledAt(initialScheduledAt ?? null);
+      // Pre-fill from template if available
+      if (templateData) {
+        setMediaUrl(templateData.mediaUrl);
+        setSocialAccountIds(templateData.socialAccountIds);
+        // Build scheduledAt from template's scheduledTime (e.g. "14:30") using today's date
+        if (templateData.scheduledTime) {
+          const [h, m] = templateData.scheduledTime.split(":").map(Number);
+          const d = new Date();
+          d.setHours(h, m, 0, 0);
+          // If the time is already past today, push to tomorrow
+          if (d < new Date()) d.setDate(d.getDate() + 1);
+          setScheduledAt(d.toISOString());
+        } else {
+          setScheduledAt(initialScheduledAt ?? null);
+        }
+      } else {
+        setMediaUrl(null);
+        setSocialAccountIds([]);
+        setScheduledAt(initialScheduledAt ?? null);
+      }
       return;
     }
     setLoadingEdit(true);
@@ -68,6 +88,44 @@ export default function StoryComposer({ editId, onSaved, initialScheduledAt }: S
   const selectedAccounts = accounts.filter((a) =>
     socialAccountIds.includes(a.id),
   );
+
+  const saveAsTemplate = async () => {
+    if (!mediaUrl) {
+      toast.error("Ajoutez un média pour enregistrer comme modèle");
+      return;
+    }
+    if (!socialAccountIds.length) {
+      toast.error("Sélectionnez au moins un compte");
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      // Extract time from scheduledAt if set
+      let scheduledTime: string | undefined;
+      if (scheduledAt) {
+        const d = new Date(scheduledAt);
+        scheduledTime = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+      }
+      const body = editId
+        ? { storyId: editId, scheduledTime }
+        : { mediaUrl, socialAccountIds, scheduledTime };
+      const res = await apiFetch("/api/story-templates", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        toast.success("Modèle enregistré");
+        onTemplateSaved?.();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || "Erreur lors de l'enregistrement du modèle");
+      }
+    } catch {
+      toast.error("Erreur réseau");
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
 
   const handleSave = async (asDraft: boolean) => {
     if (!mediaUrl) {
@@ -236,6 +294,15 @@ export default function StoryComposer({ editId, onSaved, initialScheduledAt }: S
           >
             <Save className="h-3.5 w-3.5" />
             Brouillon
+          </Button>
+          <Button
+            variant="outline"
+            onClick={saveAsTemplate}
+            disabled={savingTemplate}
+            className="h-8 text-xs gap-1.5"
+          >
+            <LayoutTemplate className="h-3.5 w-3.5" />
+            {savingTemplate ? "..." : "Modèle"}
           </Button>
           <Button
             onClick={() => handleSave(false)}

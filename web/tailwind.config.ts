@@ -57,10 +57,15 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "highlight-fade": {
+          "0%": { backgroundColor: "rgb(187 247 208)" },
+          "100%": { backgroundColor: "transparent" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "highlight-fade": "highlight-fade 2s ease-out forwards",
       },
     },
   },

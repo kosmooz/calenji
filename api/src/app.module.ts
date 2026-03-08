@@ -14,7 +14,9 @@ import { SocialAuthModule } from "./social-auth/social-auth.module";
 import { PostsModule } from "./posts/posts.module";
 import { StoriesModule } from "./stories/stories.module";
 import { CalendarModule } from "./calendar/calendar.module";
+import { CalendarViewsModule } from "./calendar-views/calendar-views.module";
 import { PublisherModule } from "./publisher/publisher.module";
+import { StoryTemplatesModule } from "./story-templates/story-templates.module";
 import { MediaHostModule } from "./media-host/media-host.module";
 
 @Module({
@@ -39,7 +41,9 @@ import { MediaHostModule } from "./media-host/media-host.module";
     PostsModule,
     StoriesModule,
     CalendarModule,
+    CalendarViewsModule,
     PublisherModule,
+    StoryTemplatesModule,
   ],
   providers: [
     {

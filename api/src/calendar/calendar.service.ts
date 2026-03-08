@@ -5,6 +5,8 @@ import { PostStatus } from "@prisma/client";
 export interface CalendarItem {
   id: string;
   type: "post" | "story";
+  contentType: string | null;
+  mediaType: string | null;
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
@@ -12,6 +14,7 @@ export interface CalendarItem {
   thumbnailUrl: string | null;
   platforms: string[];
   accountNames: string[];
+  platformAccounts: { platform: string; accountName: string; accountAvatar: string | null }[];
 }
 
 @Injectable()
@@ -22,7 +25,7 @@ export class CalendarService {
     userId: string,
     from: string,
     to: string,
-    socialAccountId?: string,
+    socialAccountId?: string | string[],
   ): Promise<{ items: CalendarItem[] }> {
     const fromDate = new Date(from);
     const toDate = new Date(to);
@@ -34,9 +37,11 @@ export class CalendarService {
       ],
     };
 
-    const accountFilter = socialAccountId
-      ? { accounts: { some: { socialAccountId } } }
-      : {};
+    let accountFilter = {};
+    if (socialAccountId) {
+      const ids = Array.isArray(socialAccountId) ? socialAccountId : [socialAccountId];
+      accountFilter = { accounts: { some: { socialAccountId: { in: ids } } } };
+    }
 
     const [posts, stories] = await Promise.all([
       this.prisma.post.findMany({
@@ -45,7 +50,7 @@ export class CalendarService {
           media: { take: 1, orderBy: { position: "asc" } },
           accounts: {
             include: {
-              socialAccount: { select: { platform: true, accountName: true } },
+              socialAccount: { select: { platform: true, accountName: true, accountAvatar: true } },
             },
           },
         },
@@ -54,10 +59,10 @@ export class CalendarService {
       this.prisma.story.findMany({
         where: { userId, ...dateFilter, ...accountFilter },
         include: {
-          media: { take: 1 },
+          media: { take: 1, orderBy: { position: "asc" } },
           accounts: {
             include: {
-              socialAccount: { select: { platform: true, accountName: true } },
+              socialAccount: { select: { platform: true, accountName: true, accountAvatar: true } },
             },
           },
         },
@@ -69,6 +74,8 @@ export class CalendarService {
       ...posts.map((p) => ({
         id: p.id,
         type: "post" as const,
+        contentType: p.contentType,
+        mediaType: p.media[0]?.type || null,
         status: p.status,
         scheduledAt: p.scheduledAt?.toISOString() || null,
         publishedAt: p.publishedAt?.toISOString() || null,
@@ -76,10 +83,13 @@ export class CalendarService {
         thumbnailUrl: p.media[0]?.localUrl || null,
         platforms: [...new Set(p.accounts.map((a) => a.socialAccount.platform))],
         accountNames: p.accounts.map((a) => a.socialAccount.accountName),
+        platformAccounts: p.accounts.map((a) => ({ platform: a.socialAccount.platform, accountName: a.socialAccount.accountName, accountAvatar: a.socialAccount.accountAvatar })),
       })),
       ...stories.map((s) => ({
         id: s.id,
         type: "story" as const,
+        contentType: "STORY",
+        mediaType: s.media[0]?.type || null,
         status: s.status,
         scheduledAt: s.scheduledAt?.toISOString() || null,
         publishedAt: s.publishedAt?.toISOString() || null,
@@ -87,6 +97,7 @@ export class CalendarService {
         thumbnailUrl: s.media[0]?.localUrl || null,
         platforms: [...new Set(s.accounts.map((a) => a.socialAccount.platform))],
         accountNames: s.accounts.map((a) => a.socialAccount.accountName),
+        platformAccounts: s.accounts.map((a) => ({ platform: a.socialAccount.platform, accountName: a.socialAccount.accountName, accountAvatar: a.socialAccount.accountAvatar })),
       })),
     ];
 

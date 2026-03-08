@@ -41,7 +41,7 @@ export class PostsService {
         where,
         include: {
           media: { orderBy: { position: "asc" } },
-          accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true } } } },
+          accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true, accountAvatar: true } } } },
         },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
@@ -131,7 +131,7 @@ export class PostsService {
       },
       include: {
         media: true,
-        accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true } } } },
+        accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true, accountAvatar: true } } } },
       },
     });
 
@@ -216,7 +216,7 @@ export class PostsService {
       },
       include: {
         media: { orderBy: { position: "asc" } },
-        accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true } } } },
+        accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true, accountAvatar: true } } } },
       },
     });
   }

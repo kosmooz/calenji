@@ -34,7 +34,7 @@ export class StoriesService {
       where,
       include: {
         media: { orderBy: { position: "asc" } },
-        accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true } } } },
+        accounts: { include: { socialAccount: { select: { id: true, platform: true, accountName: true, accountAvatar: true } } } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -97,6 +97,7 @@ export class StoriesService {
   async update(userId: string, id: string, dto: UpdateStoryDto) {
     const story = await this.prisma.story.findFirst({ where: { id, userId } });
     if (!story) throw new NotFoundException("Story non trouvée");
+
     if (story.status !== PostStatus.DRAFT && story.status !== PostStatus.SCHEDULED) {
       throw new BadRequestException("Seuls les brouillons et programmés peuvent être modifiés");
     }

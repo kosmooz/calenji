@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Dialog from "@/components/ui/dialog";
+import ConfirmDialog from "@/components/ui/confirm-dialog";
 import PublishStatusBadge from "@/components/social/PublishStatusBadge";
 
 interface PostDetailDialogProps {
@@ -60,6 +61,8 @@ export default function PostDetailDialog({
 }: PostDetailDialogProps) {
   const [post, setPost] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!postId || !open) {
@@ -94,15 +97,18 @@ export default function PostDetailDialog({
   };
 
   const handleDelete = async () => {
-    if (!post || !confirm("Supprimer cette publication ?")) return;
+    if (!post) return;
+    setDeleting(true);
     const res = await apiFetch(`/api/posts/${post.id}`, { method: "DELETE" });
     if (res.ok) {
       toast.success("Publication supprimée");
+      setConfirmDeleteOpen(false);
       onClose();
       onDeleted?.();
     } else {
       toast.error("Erreur lors de la suppression");
     }
+    setDeleting(false);
   };
 
   const formatDate = (iso: string) =>
@@ -266,7 +272,7 @@ export default function PostDetailDialog({
             {canDelete && (
               <Button
                 variant="outline"
-                onClick={handleDelete}
+                onClick={() => setConfirmDeleteOpen(true)}
                 className="h-8 text-xs gap-1.5 text-red-500 hover:text-red-600 hover:border-red-200"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -276,6 +282,17 @@ export default function PostDetailDialog({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Supprimer cette publication ?"
+        description="Cette action est irréversible. La publication sera définitivement supprimée."
+        confirmLabel="Supprimer"
+        variant="danger"
+        loading={deleting}
+      />
     </Dialog>
   );
 }

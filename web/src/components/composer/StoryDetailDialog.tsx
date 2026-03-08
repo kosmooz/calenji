@@ -11,9 +11,11 @@ import {
   Calendar,
   Instagram,
   Facebook,
+  LayoutTemplate,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Dialog from "@/components/ui/dialog";
+import ConfirmDialog from "@/components/ui/confirm-dialog";
 import PublishStatusBadge from "@/components/social/PublishStatusBadge";
 
 interface StoryDetailDialogProps {
@@ -22,6 +24,7 @@ interface StoryDetailDialogProps {
   onClose: () => void;
   onEdit?: (id: string) => void;
   onDeleted?: () => void;
+  onTemplateSaved?: () => void;
 }
 
 interface StoryDetail {
@@ -51,9 +54,12 @@ export default function StoryDetailDialog({
   onClose,
   onEdit,
   onDeleted,
+  onTemplateSaved,
 }: StoryDetailDialogProps) {
   const [story, setStory] = useState<StoryDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!storyId || !open) {
@@ -89,14 +95,42 @@ export default function StoryDetailDialog({
   };
 
   const handleDelete = async () => {
-    if (!story || !confirm("Supprimer cette story ?")) return;
+    if (!story) return;
+    setDeleting(true);
     const res = await apiFetch(`/api/stories/${story.id}`, { method: "DELETE" });
     if (res.ok) {
       toast.success("Story supprimée");
+      setConfirmDeleteOpen(false);
       onClose();
       onDeleted?.();
     } else {
       toast.error("Erreur lors de la suppression");
+    }
+    setDeleting(false);
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!story) return;
+    try {
+      // Extract time from scheduledAt if available
+      let scheduledTime: string | undefined;
+      if (story.scheduledAt) {
+        const d = new Date(story.scheduledAt);
+        scheduledTime = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+      }
+      const res = await apiFetch("/api/story-templates", {
+        method: "POST",
+        body: JSON.stringify({ storyId: story.id, scheduledTime }),
+      });
+      if (res.ok) {
+        toast.success("Modèle enregistré");
+        onTemplateSaved?.();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.message || "Erreur lors de l'enregistrement du modèle");
+      }
+    } catch {
+      toast.error("Erreur réseau");
     }
   };
 
@@ -211,6 +245,14 @@ export default function StoryDetailDialog({
 
           {/* Actions */}
           <div className="flex gap-2 pt-2 border-t border-[#e8e5e0]">
+            <Button
+              variant="outline"
+              onClick={handleSaveAsTemplate}
+              className="h-8 text-xs gap-1.5"
+            >
+              <LayoutTemplate className="h-3.5 w-3.5" />
+              Modèle
+            </Button>
             {canEdit && onEdit && (
               <Button
                 variant="outline"
@@ -237,7 +279,7 @@ export default function StoryDetailDialog({
             {canDelete && (
               <Button
                 variant="outline"
-                onClick={handleDelete}
+                onClick={() => setConfirmDeleteOpen(true)}
                 className="h-8 text-xs gap-1.5 text-red-500 hover:text-red-600 hover:border-red-200"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -247,6 +289,17 @@ export default function StoryDetailDialog({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Supprimer cette story ?"
+        description="Cette action est irréversible. La story sera définitivement supprimée."
+        confirmLabel="Supprimer"
+        variant="danger"
+        loading={deleting}
+      />
     </Dialog>
   );
 }

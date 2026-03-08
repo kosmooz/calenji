@@ -72,6 +72,8 @@ model User {
   socialAccounts SocialAccount[]
   posts          Post[]
   stories        Story[]
+  storyTemplates StoryTemplate[]
+  calendarViews  CalendarView[]
 }
 
 // ─── Auth ──────────────────────────────────────────────────────────────
@@ -276,6 +278,43 @@ model StoryAccount {
   publishedAt    DateTime?
 
   @@unique([storyId, socialAccountId])
+}
+
+// ─── Calendar Views ──────────────────────────────────────────────────
+
+model CalendarView {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  name             String
+  socialAccountIds String[]
+  position         Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ─── Story Templates ────────────────────────────────────────────────
+
+model StoryTemplate {
+  id               String               @id @default(cuid())
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id])
+  name             String?
+  scheduledTime    String?
+  socialAccountIds String[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  media            StoryTemplateMedia[]
+}
+
+model StoryTemplateMedia {
+  id              String        @id @default(cuid())
+  storyTemplateId String
+  storyTemplate   StoryTemplate @relation(fields: [storyTemplateId], references: [id], onDelete: Cascade)
+  type            MediaType
+  localUrl        String
+  publicUrl       String?
+  position        Int           @default(0)
 }
 
 // ─── Publish Log ──────────────────────────────────────────────────────
