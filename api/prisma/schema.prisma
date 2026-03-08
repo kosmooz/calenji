@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AddressType {
+  BILLING
+  SHIPPING
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum ContentType {
+  POST
+  STORY
+  REEL
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+// ─── User ──────────────────────────────────────────────────────────────
+
+model User {
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  passwordHash         String
+  emailVerified        Boolean   @default(false)
+  emailVerifyToken     String?
+  role                 Role      @default(USER)
+  firstName            String?
+  lastName             String?
+  phone                String?
+  company              String?
+  siret                String?
+  tvaNumber            String?
+  loginCode            String?
+  loginCodeExpires     DateTime?
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  deleted              Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  refreshTokens  RefreshToken[]
+  authLogs       AuthLog[]
+  addresses      Address[]
+  socialAccounts SocialAccount[]
+  posts          Post[]
+  stories        Story[]
+}
+
+// ─── Auth ──────────────────────────────────────────────────────────────
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model AuthLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  email     String
+  action    String
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+}
+
+// ─── Address ───────────────────────────────────────────────────────────
+
+model Address {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id])
+  type       AddressType
+  isDefault  Boolean     @default(false)
+  firstName  String
+  lastName   String
+  company    String?
+  street     String
+  street2    String?
+  city       String
+  postalCode String
+  country    String?
+  phone      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+// ─── Shop Settings ─────────────────────────────────────────────────────
+
+model ShopSettings {
+  id                     String   @id @default(cuid())
+  name                   String   @default("Social App")
+  address                String?
+  latitude               Float?
+  longitude              Float?
+  description            String?
+  companyName             String?
+  siret                  String?
+  tvaNumber              String?
+  companyStreet           String?
+  companyStreet2          String?
+  companyPostalCode       String?
+  companyCity             String?
+  legalFirstName          String?
+  legalLastName           String?
+  legalEmail              String?
+  slogan                 String?
+  siteIcon               String?
+  adminEmail             String?
+  timezone               String   @default("Europe/Paris")
+  maintenanceEnabled     Boolean  @default(false)
+  maintenanceMode        String   @default("FULL_BLOCK")
+  maintenanceTitle       String?
+  maintenanceDescription String?
+  smtpHost               String?
+  smtpPort               Int?
+  smtpUser               String?
+  smtpPass               String?
+  smtpFrom               String?
+  deleted                Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  images ShopImage[]
+}
+
+model ShopImage {
+  id             String       @id @default(cuid())
+  shopSettingsId String
+  shopSettings   ShopSettings @relation(fields: [shopSettingsId], references: [id])
+  url            String
+  alt            String?
+  position       Int          @default(0)
+  createdAt      DateTime     @default(now())
+}
+
+// ─── Social Accounts ──────────────────────────────────────────────────
+
+model SocialAccount {
+  id                   String         @id @default(cuid())
+  userId               String
+  user                 User           @relation(fields: [userId], references: [id])
+  platform             SocialPlatform
+  platformAccountId    String
+  accountName          String
+  accountAvatar        String?
+  facebookPageId       String?
+  accessTokenEnc       String
+  accessTokenIv        String
+  accessTokenTag       String
+  metaUserTokenEnc     String?
+  metaUserTokenIv      String?
+  metaUserTokenTag     String?
+  metaUserTokenExp     DateTime?
+  isActive             Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  postAccounts  PostAccount[]
+  storyAccounts StoryAccount[]
+
+  @@unique([userId, platform, platformAccountId])
+}
+
+// ─── Posts ─────────────────────────────────────────────────────────────
+
+model Post {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  caption     String?
+  contentType  ContentType @default(POST)
+  reelCoverUrl String?
+  status       PostStatus  @default(DRAFT)
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  media    PostMedia[]
+  accounts PostAccount[]
+}
+
+model PostMedia {
+  id       String    @id @default(cuid())
+  postId   String
+  post     Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  type     MediaType
+  localUrl String
+  publicUrl String?
+  position Int       @default(0)
+}
+
+model PostAccount {
+  id             String      @id @default(cuid())
+  postId         String
+  post           Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount  SocialAccount @relation(fields: [socialAccountId], references: [id])
+  status         PostStatus  @default(DRAFT)
+  platformPostId String?
+  errorMessage   String?
+  publishedAt    DateTime?
+
+  @@unique([postId, socialAccountId])
+}
+
+// ─── Stories ──────────────────────────────────────────────────────────
+
+model Story {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  status      PostStatus @default(DRAFT)
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  media    StoryMedia[]
+  accounts StoryAccount[]
+}
+
+model StoryMedia {
+  id        String    @id @default(cuid())
+  storyId   String
+  story     Story     @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  type      MediaType
+  localUrl  String
+  publicUrl String?
+  position  Int       @default(0)
+}
+
+model StoryAccount {
+  id             String        @id @default(cuid())
+  storyId        String
+  story          Story         @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount  SocialAccount @relation(fields: [socialAccountId], references: [id])
+  status         PostStatus    @default(DRAFT)
+  platformPostId String?
+  errorMessage   String?
+  publishedAt    DateTime?
+
+  @@unique([storyId, socialAccountId])
+}
+
+// ─── Publish Log ──────────────────────────────────────────────────────
+
+model PublishLog {
+  id        String   @id @default(cuid())
+  action    String
+  entityType String
+  entityId  String
+  accountId String?
+  success   Boolean
+  error     String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
